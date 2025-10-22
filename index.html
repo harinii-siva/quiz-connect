@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Smart Quiz – Secure</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  body { background:#0f172a; color:#e6eef8; font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial; }
+  .card { background:#111827; border-radius:12px; padding:18px; box-shadow:0 6px 18px rgba(2,6,23,0.8); }
+  .option-btn { display:block; width:100%; text-align:left; padding:12px; margin:8px 0; border-radius:10px; background:#0b1220; border:1px solid #24303f; }
+  .option-btn:hover { transform:translateY(-3px); box-shadow:0 8px 20px rgba(2,6,23,0.6); }
+  .option-btn.selected { background:#22c55e; color:#062814; border-color:#16a34a; }
+  .muted { color:#9aa8bd; }
+  .topbar { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:14px; }
+  #webcam { width:140px; height:105px; border-radius:10px; background:#0b1220; object-fit:cover; }
+  .input-field { width:100%; padding:10px; border-radius:8px; background:#0b1220; border:1px solid #24303f; color:#e6eef8; margin-bottom:12px; }
+  .input-field:focus { outline:none; border-color:#22c55e; }
+</style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-6">
+
+<div class="w-full max-w-3xl">
+  <div class="card">
+    <div class="topbar">
+      <div>
+        <h1 class="text-2xl font-bold">Smart Quiz – Video Supervised</h1>
+        <p class="muted text-sm">Enter your name, select questions, and take the quiz.</p>
+      </div>
+      <div class="flex items-center space-x-3">
+        <div id="webcam-wrap" class="text-right muted">
+          <div class="text-xs">Webcam</div>
+          <video id="webcam" autoplay muted playsinline></video>
+        </div>
+      </div>
+    </div>
+
+    <!-- Name Input -->
+    <div id="name-input" class="mb-4">
+      <div class="text-center mb-4">
+        <div class="text-sm muted mb-2">Enter Your Name</div>
+        <input type="text" id="userName" class="input-field" placeholder="Your name..." maxlength="50" />
+        <button id="nameSubmitBtn" class="px-6 py-2 rounded bg-emerald-500 text-black font-semibold w-full">Continue</button>
+      </div>
+      <div id="status" class="text-center muted text-sm"></div>
+    </div>
+
+    <!-- Setup -->
+    <div id="setup" class="mb-4 hidden">
+      <div class="text-center mb-4">
+        <div class="text-sm muted mb-2">Welcome, <span id="displayName" class="text-emerald-400 font-semibold"></span>!</div>
+        <div class="text-sm muted mb-2">How many questions would you like?</div>
+        <div class="flex justify-center gap-3">
+          <button class="btn-choose px-4 py-2 rounded bg-emerald-500 text-black font-semibold" data-count="10">10</button>
+          <button class="btn-choose px-4 py-2 rounded bg-emerald-500 text-black font-semibold" data-count="20">20</button>
+          <button class="btn-choose px-4 py-2 rounded bg-emerald-500 text-black font-semibold" data-count="30">30</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quiz area -->
+    <div id="quiz-area" class="hidden">
+      <div class="mb-3">
+        <div class="flex justify-between items-center">
+          <div class="text-sm muted">Question <span id="currentIndex">1</span> / <span id="totalCount">10</span></div>
+          <div id="timer" class="text-sm muted">Time: <span id="timerValue">--</span></div>
+        </div>
+      </div>
+      <h2 id="questionText" class="text-lg font-semibold mb-4">Question text</h2>
+
+      <div id="options" class="mb-4"></div>
+
+      <div class="flex justify-between items-center">
+        <button id="prevBtn" class="px-4 py-2 rounded bg-slate-700 muted">Previous</button>
+        <div class="flex items-center gap-3">
+          <button id="finishBtn" class="px-4 py-2 rounded bg-amber-500 text-black">Finish</button>
+          <button id="nextBtn" class="px-4 py-2 rounded bg-emerald-500 text-black">Next</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div id="results" class="hidden mt-4">
+      <h3 class="text-xl font-bold">Results</h3>
+      <p class="muted text-sm mb-2">Your answers and the correct ones:</p>
+      <div id="resultsList" class="mb-4"></div>
+      <div class="flex justify-between items-center">
+        <div class="text-lg font-semibold">Score: <span id="scoreText">0/0</span></div>
+        <button id="restart" class="px-4 py-2 rounded bg-emerald-500 text-black">Restart</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+/* ---------- CONFIG ---------- */
+const WS_URL = "ws://127.0.0.1:12345";
+const UPLOAD_URL = "http://127.0.0.1:12346/uploadVideo";
+const QUESTION_PREFIX = "QID:";
+const SESSION_PREFIX = "SESSION:";
+const RESULTS_DONE = "RESULTS_DONE";
+
+/* ---------- STATE ---------- */
+let ws = null;
+let sessionId = null;
+let userName = "";
+let sessionQuestionIds = [];
+let questions = [];
+let answers = {};
+let currentIndex = 0;
+let totalCount = 0;
+
+/* ---------- webcam recording ---------- */
+let mediaRecorder = null;
+let recordedBlobs = [];
+let webcamStream = null;
+
+/* ---------- UI refs ---------- */
+const nameInputEl = document.getElementById('name-input');
+const nameSubmitBtn = document.getElementById('nameSubmitBtn');
+const userNameInput = document.getElementById('userName');
+const displayNameEl = document.getElementById('displayName');
+const setupEl = document.getElementById('setup');
+const statusEl = document.getElementById('status');
+const quizArea = document.getElementById('quiz-area');
+const questionTextEl = document.getElementById('questionText');
+const optionsEl = document.getElementById('options');
+const currentIndexEl = document.getElementById('currentIndex');
+const totalCountEl = document.getElementById('totalCount');
+const timerEl = document.getElementById('timerValue');
+const resultsEl = document.getElementById('results');
+const resultsListEl = document.getElementById('resultsList');
+const scoreTextEl = document.getElementById('scoreText');
+const webcamVideo = document.getElementById('webcam');
+
+const nextBtn = document.getElementById('nextBtn');
+const prevBtn = document.getElementById('prevBtn');
+const finishBtn = document.getElementById('finishBtn');
+const restartBtn = document.getElementById('restart');
+
+/* ---------- timer per question ---------- */
+let questionTime = 30;
+let timerInterval = null;
+function startTimer() {
+  clearInterval(timerInterval);
+  let t = questionTime;
+  timerEl.textContent = `${t}s`;
+  timerInterval = setInterval(()=> {
+    t--;
+    timerEl.textContent = `${t}s`;
+    if (t <= 0) {
+      clearInterval(timerInterval);
+      goNext();
+    }
+  },1000);
+}
+function stopTimer(){ clearInterval(timerInterval); timerEl.textContent="--"; }
+
+/* ---------- helpers ---------- */
+function show(el){ el.classList.remove('hidden'); }
+function hide(el){ el.classList.add('hidden'); }
+function setStatus(txt){ statusEl.textContent = txt; }
+
+/* ---------- Name submission ---------- */
+nameSubmitBtn.addEventListener('click', () => {
+  const name = userNameInput.value.trim();
+  if (!name) {
+    setStatus("Please enter your name");
+    return;
+  }
+  userName = name;
+  displayNameEl.textContent = userName;
+  hide(nameInputEl);
+  show(setupEl);
+  setStatus("");
+});
+
+userNameInput.addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') nameSubmitBtn.click();
+});
+
+/* ---------- WS handling ---------- */
+function initWebSocket() {
+  ws = new WebSocket(WS_URL);
+  ws.onopen = () => { 
+    setStatus("Connected to server");
+    // Send user name immediately after connection
+    if (userName) {
+      ws.send("NAME|" + userName);
+    }
+  };
+  ws.onmessage = (ev) => {
+    const msg = ev.data;
+    
+    if (msg.startsWith(SESSION_PREFIX)) {
+      sessionId = msg.substring(SESSION_PREFIX.length).trim();
+      console.log("SESSION:", sessionId);
+      setStatus("Session: " + sessionId + " – receiving questions...");
+      return;
+    }
+
+    if (msg.startsWith(QUESTION_PREFIX)) {
+      const lines = msg.split("\n");
+      const idLine = lines[0];
+      const qid = parseInt(idLine.split(":")[1].trim());
+      const qText = lines[1].trim();
+      const opts = [];
+      for (let i = 2; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        const idx = line.indexOf(')');
+        if (idx > 0) {
+          const char = line.substring(0, idx).trim();
+          const text = line.substring(idx+1).trim();
+          opts.push({ char, text });
+        } else {
+          opts.push({ char: "?", text: line });
+        }
+      }
+      sessionQuestionIds.push(qid);
+      questions.push({ id: qid, question: qText, options: opts });
+      
+      if (questions.length === totalCount) {
+        setStatus("Received all questions. Starting quiz...");
+        setTimeout(()=> {
+          hide(setupEl);
+          show(quizArea);
+          startRecording();
+          renderQuestion(0);
+        }, 600);
+      }
+      return;
+    }
+
+    if (msg.startsWith("RESULT:")) {
+      console.log("Server result:", msg);
+      return;
+    }
+
+    if (msg === "RESULTS_DONE") {
+      return;
+    }
+
+    console.log("WS:", msg);
+  };
+
+  ws.onclose = () => { setStatus("Disconnected from server"); };
+  ws.onerror = (err) => { console.error("WS error", err); setStatus("WebSocket error"); };
+}
+
+/* ---------- start recording webcam ---------- */
+async function startRecording() {
+  try {
+    webcamStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    webcamVideo.srcObject = webcamStream;
+    webcamVideo.play();
+    recordedBlobs = [];
+
+    const options = { mimeType: 'video/webm;codecs=vp8,opus' };
+    mediaRecorder = new MediaRecorder(webcamStream, options);
+
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) recordedBlobs.push(e.data);
+    };
+
+    mediaRecorder.onstop = () => {
+      console.log("Recording stopped, blobs:", recordedBlobs.length);
+      const blob = new Blob(recordedBlobs, { type: 'video/webm' });
+      uploadVideo(blob);
+    };
+
+    mediaRecorder.start();
+    console.log("MediaRecorder started", mediaRecorder);
+  } catch (e) {
+    console.warn("Webcam access denied or not available:", e);
+    setStatus("Webcam not available or permission denied.");
+  }
+}
+
+/* ---------- stop recording ---------- */
+function stopRecording() {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop();
+  }
+  if (webcamStream) {
+    webcamStream.getTracks().forEach(t => t.stop());
+    webcamStream = null;
+  }
+}
+
+/* ---------- upload video blob to server ---------- */
+async function uploadVideo(blob) {
+  if (!sessionId) {
+    console.warn("No session id to attach to upload");
+    return;
+  }
+  try {
+    setStatus("Uploading video...");
+    const url = UPLOAD_URL + "?session=" + encodeURIComponent(sessionId);
+    const resp = await fetch(url, { method: "POST", headers: { 'Content-Type':'video/webm' }, body: blob });
+    const text = await resp.text();
+    console.log("Upload response:", text);
+    setStatus("Video uploaded.");
+  } catch (e) {
+    console.error("Upload failed", e);
+    setStatus("Video upload failed.");
+  }
+}
+
+/* ---------- quiz UI logic ---------- */
+function renderQuestion(index) {
+  currentIndex = index;
+  const q = questions[currentIndex];
+  if (!q) return;
+  currentIndexEl.textContent = (currentIndex + 1);
+  totalCountEl.textContent = totalCount;
+  questionTextEl.textContent = q.question;
+  optionsEl.innerHTML = "";
+  q.options.forEach(opt => {
+    const b = document.createElement('button');
+    b.className = "option-btn";
+    b.textContent = opt.char + ") " + opt.text;
+    if (answers[q.id] === opt.char) b.classList.add('selected');
+    b.onclick = () => {
+      answers[q.id] = opt.char;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(q.id + "|" + opt.char);
+      }
+      Array.from(optionsEl.children).forEach(c=>c.classList.remove('selected'));
+      b.classList.add('selected');
+    };
+    optionsEl.appendChild(b);
+  });
+  startTimer();
+}
+
+function goNext() {
+  stopTimer();
+  if (currentIndex < questions.length - 1) {
+    renderQuestion(currentIndex + 1);
+  } else {
+    finishQuiz();
+  }
+}
+function goPrev() {
+  stopTimer();
+  if (currentIndex > 0) renderQuestion(currentIndex - 1);
+}
+
+/* ---------- finish flow ---------- */
+function finishQuiz() {
+  stopTimer();
+  stopRecording();
+
+  if (!sessionId) {
+    setStatus("No session id – cannot request results.");
+    showLocalResults();
+    return;
+  }
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send("REQ_RESULTS|" + sessionId);
+    const correctMap = {};
+    const handler = (ev) => {
+      const msg = ev.data;
+      if (msg.startsWith("RESULT:")) {
+        const parts = msg.split(":");
+        const qid = parseInt(parts[1]);
+        const correct = parts[2].trim();
+        correctMap[qid] = correct;
+        return;
+      }
+      if (msg === "RESULTS_DONE") {
+        ws.removeEventListener('message', handler);
+        renderResults(correctMap);
+      }
+    };
+    ws.addEventListener('message', handler);
+    setTimeout(()=> {
+      if (Object.keys(correctMap).length === 0) {
+        renderResults({});
+      }
+    }, 3000);
+  } else {
+    renderResults({});
+  }
+}
+
+function renderResults(correctMap) {
+  hide(quizArea);
+  show(resultsEl);
+  resultsListEl.innerHTML = "";
+  let score = 0;
+  questions.forEach(q => {
+    const user = answers[q.id] || "N/A";
+    const correct = correctMap[q.id] || "(unknown)";
+    const ok = correctMap[q.id] ? (user === correct) : false;
+    if (ok) score++;
+    const row = document.createElement('div');
+    row.className = "mb-2 p-2 rounded";
+    row.style.background = "#071023";
+    row.innerHTML = `<div class="text-sm font-medium">${q.question}</div>
+      <div class="text-xs muted">Your: ${user} | Correct: ${correct} ${ok ? '✅' : '❌'}</div>`;
+    resultsListEl.appendChild(row);
+  });
+  scoreTextEl.textContent = `${score} / ${questions.length}`;
+  setStatus("Quiz completed. Video upload will occur in the background.");
+  
+  // Send final score to server
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send("FINAL_SCORE|" + sessionId + "|" + score + "|" + questions.length);
+  }
+}
+
+function showLocalResults() {
+  hide(quizArea);
+  show(resultsEl);
+  resultsListEl.innerHTML = "";
+  let answered = Object.keys(answers).length;
+  let score = 0;
+  resultsListEl.innerHTML = `<div class="muted">Could not fetch correct answers from server. Answers submitted: ${answered}</div>`;
+  scoreTextEl.textContent = `${score} / ${questions.length}`;
+}
+
+/* ---------- UI event bindings ---------- */
+document.querySelectorAll('.btn-choose').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    totalCount = parseInt(btn.dataset.count);
+    questions = [];
+    answers = {};
+    sessionQuestionIds = [];
+    setStatus("Requesting " + totalCount + " random questions...");
+    initWebSocket();
+    const waitForOpen = () => new Promise(resolve => {
+      const check = () => {
+        if (ws && ws.readyState === WebSocket.OPEN) return resolve();
+        setTimeout(check, 100);
+      };
+      check();
+    });
+    await waitForOpen();
+    ws.send("REQ_RANDOM|" + totalCount);
+  });
+});
+
+nextBtn.addEventListener('click', goNext);
+prevBtn.addEventListener('click', goPrev);
+finishBtn.addEventListener('click', finishQuiz);
+restartBtn.addEventListener('click', () => location.reload());
+
+/* ---------- initialize webcam preview ---------- */
+(async function tryPreview() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    webcamVideo.srcObject = stream;
+    webcamVideo.muted = true;
+    webcamVideo.play();
+    stream.getTracks().forEach(t=>t.stop());
+  } catch (e) {
+    console.warn("No preview available:", e);
+  }
+})();
+</script>
+</body>
+</html>

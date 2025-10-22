@@ -1,0 +1,3 @@
+java -cp ".;Java-WebSocket-1.5.6.jar;slf4j-api-1.7.36.jar;slf4j-simple-1.7.36.jar;mysql-connector-j-8.0.33.jar" com.quiz.server.QuizServer
+javac -cp .;Java-WebSocket-1.5.6.jar;slf4j-api-1.7.36.jar;slf4j-simple-1.7.36.jar;mysql-connector-j-8.0.33.jar QuizServer.java 
+java -cp .;Java-WebSocket-1.5.6.jar;slf4j-api-1.7.36.jar;slf4j-simple-1.7.36.jar;mysql-connector-j-8.0.33.jar QuizServer
