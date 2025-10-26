@@ -5,6 +5,7 @@ USE `smart_quiz`;
 -- Drop tables if exist (drop dependent table first)
 DROP TABLE IF EXISTS `ans`;
 DROP TABLE IF EXISTS `qst`;
+DROP TABLE IF EXISTS `results`;
 
 -- Create questions table
 CREATE TABLE `qst` (
@@ -107,3 +108,14 @@ INSERT INTO `ans` (`question_id`, `text`, `option_char`) VALUES
 (38,'  6','A'),(38,'   8','B'),(38,'   7','C'),(38,'   9','D'),
 (39,'  peacock','A'),(39,'   Eagle','B'),(39,' Ostrich','C'),(39,'   Penguin','D'),
 (40,'  Homer','A'),(40,'   Virgil','B'),(40,'   Plato','C'),(40,'   Socrates','D');
+
+CREATE TABLE results (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    session_id VARCHAR(100),
+    user_name VARCHAR(100),
+    score INT,
+    total_questions INT,
+    percentage DECIMAL(5,2),
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+

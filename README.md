@@ -22,8 +22,6 @@ quiz-connect/
 └── README.md          # This file
 ```
 
-*Note: The `uploads/` directory is automatically created by the application when the first video is uploaded. You do not need to manually create this directory.*
-
 ## Prerequisites
 
 - Java JDK 8 or higher
@@ -59,11 +57,6 @@ Compile the Java server:
 javac -cp ".;Java-WebSocket-1.5.6.jar;mysql-connector-j-8.0.33.jar;slf4j-api-1.7.36.jar" QuizServer.java
 ```
 
-On Linux/Mac, use colons instead of semicolons:
-```bash
-javac -cp ".:Java-WebSocket-1.5.6.jar:mysql-connector-j-8.0.33.jar:slf4j-api-1.7.36.jar" QuizServer.java
-```
-
 ## Running the Application
 
 ### 1. Start the Server
@@ -71,11 +64,6 @@ javac -cp ".:Java-WebSocket-1.5.6.jar:mysql-connector-j-8.0.33.jar:slf4j-api-1.7
 Run the compiled server:
 ```bash
 java -cp ".;Java-WebSocket-1.5.6.jar;mysql-connector-j-8.0.33.jar;slf4j-api-1.7.36.jar;slf4j-simple-1.7.36.jar" QuizServer
-```
-
-On Linux/Mac:
-```bash
-java -cp ".:Java-WebSocket-1.5.6.jar:mysql-connector-j-8.0.33.jar:slf4j-api-1.7.36.jar:slf4j-simple-1.7.36.jar" QuizServer
 ```
 
 The server will start on two ports:
@@ -106,38 +94,24 @@ Connected to Database: smart_quiz
  Message from client: NAME|hari
  Client registered as: hari (/127.0.0.1:50138)
  Message from client: REQ_RANDOM|10
- Starting quiz session for: hari (Session: bf9daf75-ce18-494b-8092-d846f3ea60ca, Questions: 10)
- Message from client: REQ_RANDOM|10
- Starting quiz session for: hari (Session: f418a360-7fc2-4c5b-9d63-efbc9aca9c56, Questions: 10)
- Message from client: REQ_RANDOM|10
- Starting quiz session for: hari (Session: 7c0f55bd-7cde-4e96-893e-990168d229ef, Questions: 10)
- Message from client: REQ_RANDOM|10
- Starting quiz session for: hari (Session: edfe30f2-92a5-4e20-96dc-4aefcaaae286, Questions: 10)
- Message from client: REQ_RANDOM|10
- Starting quiz session for: hari (Session: ec645dae-3fab-4810-ab84-af87d0b67799, Questions: 10)
- Message from client: REQ_RANDOM|10
- Starting quiz session for: hari (Session: a79063c2-0204-48e5-8ba4-01d5ebe334eb, Questions: 10)
- Message from client: REQ_RANDOM|10
- Starting quiz session for: hari (Session: 9ebe7af8-9bca-4357-a7fe-10c17a60dbed, Questions: 10)
- Message from client: REQ_RANDOM|10
  Starting quiz session for: hari (Session: 1ff7a387-3140-46d1-9d39-3bfddca3078c, Questions: 10)
  Message from client: 5|D
  hari answered Question 5 correctly: D
  Message from client: 24|A
  hari answered Question 24 correctly: A
  Message from client: REQ_RESULTS|1ff7a387-3140-46d1-9d39-3bfddca3078c
- Message from client: FINAL_SCORE|1ff7a387-3140-46d1-9d39-3bfddca3078c|0|80
+ Message from client: FINAL_SCORE|1ff7a387-3140-46d1-9d39-3bfddca3078c|0|10
  QUIZ COMPLETED
    User: hari
    Session: 1ff7a387-3140-46d1-9d39-3bfddca3078c
-   Score: 0/80 (0.0%)
+   Score: 2/10 (20.0%)
    ---
 
 ============================================================
  ALL QUIZ RESULTS SUMMARY
 ============================================================
 1. hari
-   Score: 0/80 (0.0%)
+   Score: 2/10 (20.0%)
    Session: 1ff7a387-3140-46d1-9d39-3bfddca3078c
    Time: Wed Oct 22 16:22:20 IST 2025
 
@@ -168,7 +142,7 @@ Connected to Database: smart_quiz
    Time: Wed Oct 22 16:29:53 IST 2025
 
 2. hari
-   Score: 0/80 (0.0%)
+   Score: 2/80 (20.0%)
    Session: 1ff7a387-3140-46d1-9d39-3bfddca3078c
    Time: Wed Oct 22 16:22:20 IST 2025
 
@@ -181,7 +155,7 @@ This output shows:
 - Quiz session initiations with unique session IDs
 - Real-time answer feedback (correct/incorrect)
 - Quiz completion with scores
-- Results summary showing all quiz attempts
+- Results summary showing all quiz attempts (pulled from the `results` database table)
 - Client disconnections
 
 When a video is uploaded, you'll see additional confirmation messages in the console showing the path where the video was saved.
@@ -195,7 +169,8 @@ When a video is uploaded, you'll see additional confirmation messages in the con
 5. **Video Recording**: Your webcam is recorded automatically throughout the quiz session
 6. **Answer Submission**: Answers are sent to the server in real-time as you select them
 7. **Results**: After completing the quiz, results are displayed with correct answers
-8. **Video Upload**: When you click "Finish", the recorded video is automatically uploaded to the server in the background
+8. **Result Storage**: Quiz results are automatically saved to the `results` table in the database
+9. **Video Upload**: When you click "Finish", the recorded video is automatically uploaded to the server in the background
 
 ## Video Uploads
 
@@ -226,6 +201,19 @@ CREATE TABLE `ans` (
     `text` TEXT NOT NULL,
     `option_char` VARCHAR(1) NOT NULL,
     FOREIGN KEY (`question_id`) REFERENCES `qst`(`question_id`) ON DELETE CASCADE
+);
+```
+
+### Results Table (`results`)
+```sql
+CREATE TABLE `results` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `session_id` VARCHAR(100),
+    `user_name` VARCHAR(100),
+    `score` INT,
+    `total_questions` INT,
+    `percentage` DECIMAL(5,2),
+    `timestamp` DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 ```
 

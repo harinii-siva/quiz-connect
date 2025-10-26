@@ -95,14 +95,11 @@
 </div>
 
 <script>
-/* ---------- CONFIG ---------- */
 const WS_URL = "ws://127.0.0.1:12345";
 const UPLOAD_URL = "http://127.0.0.1:12346/uploadVideo";
 const QUESTION_PREFIX = "QID:";
 const SESSION_PREFIX = "SESSION:";
 const RESULTS_DONE = "RESULTS_DONE";
-
-/* ---------- STATE ---------- */
 let ws = null;
 let sessionId = null;
 let userName = "";
@@ -112,12 +109,10 @@ let answers = {};
 let currentIndex = 0;
 let totalCount = 0;
 
-/* ---------- webcam recording ---------- */
 let mediaRecorder = null;
 let recordedBlobs = [];
 let webcamStream = null;
 
-/* ---------- UI refs ---------- */
 const nameInputEl = document.getElementById('name-input');
 const nameSubmitBtn = document.getElementById('nameSubmitBtn');
 const userNameInput = document.getElementById('userName');
@@ -140,7 +135,6 @@ const prevBtn = document.getElementById('prevBtn');
 const finishBtn = document.getElementById('finishBtn');
 const restartBtn = document.getElementById('restart');
 
-/* ---------- timer per question ---------- */
 let questionTime = 30;
 let timerInterval = null;
 function startTimer() {
@@ -158,12 +152,10 @@ function startTimer() {
 }
 function stopTimer(){ clearInterval(timerInterval); timerEl.textContent="--"; }
 
-/* ---------- helpers ---------- */
 function show(el){ el.classList.remove('hidden'); }
 function hide(el){ el.classList.add('hidden'); }
 function setStatus(txt){ statusEl.textContent = txt; }
 
-/* ---------- Name submission ---------- */
 nameSubmitBtn.addEventListener('click', () => {
   const name = userNameInput.value.trim();
   if (!name) {
@@ -181,12 +173,10 @@ userNameInput.addEventListener('keypress', (e) => {
   if (e.key === 'Enter') nameSubmitBtn.click();
 });
 
-/* ---------- WS handling ---------- */
 function initWebSocket() {
   ws = new WebSocket(WS_URL);
   ws.onopen = () => { 
     setStatus("Connected to server");
-    // Send user name immediately after connection
     if (userName) {
       ws.send("NAME|" + userName);
     }
@@ -250,7 +240,6 @@ function initWebSocket() {
   ws.onerror = (err) => { console.error("WS error", err); setStatus("WebSocket error"); };
 }
 
-/* ---------- start recording webcam ---------- */
 async function startRecording() {
   try {
     webcamStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
@@ -267,49 +256,71 @@ async function startRecording() {
 
     mediaRecorder.onstop = () => {
       console.log("Recording stopped, blobs:", recordedBlobs.length);
-      const blob = new Blob(recordedBlobs, { type: 'video/webm' });
-      uploadVideo(blob);
+      if (recordedBlobs.length > 0) {
+        const blob = new Blob(recordedBlobs, { type: 'video/webm' });
+        uploadVideo(blob);
+      } else {
+        console.warn("No video data recorded");
+        setStatus("No video data to upload");
+      }
     };
 
-    mediaRecorder.start();
-    console.log("MediaRecorder started", mediaRecorder);
+    mediaRecorder.start(1000); 
+    console.log("MediaRecorder started", mediaRecorder.state);
   } catch (e) {
     console.warn("Webcam access denied or not available:", e);
     setStatus("Webcam not available or permission denied.");
   }
 }
 
-/* ---------- stop recording ---------- */
 function stopRecording() {
+  console.log("Stopping recording...");
   if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    console.log("MediaRecorder state before stop:", mediaRecorder.state);
     mediaRecorder.stop();
+    console.log("MediaRecorder.stop() called");
+  } else {
+    console.log("MediaRecorder already inactive or not initialized");
   }
   if (webcamStream) {
-    webcamStream.getTracks().forEach(t => t.stop());
+    webcamStream.getTracks().forEach(t => {
+      t.stop();
+      console.log("Track stopped:", t.kind);
+    });
     webcamStream = null;
   }
 }
 
-/* ---------- upload video blob to server ---------- */
 async function uploadVideo(blob) {
   if (!sessionId) {
     console.warn("No session id to attach to upload");
+    setStatus("Upload failed: No session ID");
     return;
   }
+  
+  console.log("Uploading video blob, size:", blob.size, "bytes");
+  
   try {
     setStatus("Uploading video...");
     const url = UPLOAD_URL + "?session=" + encodeURIComponent(sessionId);
-    const resp = await fetch(url, { method: "POST", headers: { 'Content-Type':'video/webm' }, body: blob });
+    const resp = await fetch(url, { 
+      method: "POST", 
+      headers: { 'Content-Type':'video/webm' }, 
+      body: blob 
+    });
     const text = await resp.text();
-    console.log("Upload response:", text);
-    setStatus("Video uploaded.");
+    console.log("Upload response:", resp.status, text);
+    
+    if (resp.ok) {
+      setStatus("Video uploaded successfully!");
+    } else {
+      setStatus("Video upload failed: " + resp.status);
+    }
   } catch (e) {
     console.error("Upload failed", e);
-    setStatus("Video upload failed.");
+    setStatus("Video upload failed: " + e.message);
   }
 }
-
-/* ---------- quiz UI logic ---------- */
 function renderQuestion(index) {
   currentIndex = index;
   const q = questions[currentIndex];
@@ -348,10 +359,11 @@ function goPrev() {
   stopTimer();
   if (currentIndex > 0) renderQuestion(currentIndex - 1);
 }
-
-/* ---------- finish flow ---------- */
 function finishQuiz() {
+  console.log("=== FINISH QUIZ CALLED ===");
   stopTimer();
+  
+  console.log("Calling stopRecording()...");
   stopRecording();
 
   if (!sessionId) {
@@ -359,6 +371,7 @@ function finishQuiz() {
     showLocalResults();
     return;
   }
+  
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send("REQ_RESULTS|" + sessionId);
     const correctMap = {};
@@ -405,12 +418,13 @@ function renderResults(correctMap) {
     resultsListEl.appendChild(row);
   });
   scoreTextEl.textContent = `${score} / ${questions.length}`;
-  setStatus("Quiz completed. Video upload will occur in the background.");
   
-  // Send final score to server
   if (ws && ws.readyState === WebSocket.OPEN) {
+    console.log("Sending FINAL_SCORE to server...");
     ws.send("FINAL_SCORE|" + sessionId + "|" + score + "|" + questions.length);
   }
+  
+  setStatus("Quiz completed. Video has been uploaded.");
 }
 
 function showLocalResults() {
@@ -423,7 +437,6 @@ function showLocalResults() {
   scoreTextEl.textContent = `${score} / ${questions.length}`;
 }
 
-/* ---------- UI event bindings ---------- */
 document.querySelectorAll('.btn-choose').forEach(btn => {
   btn.addEventListener('click', async () => {
     totalCount = parseInt(btn.dataset.count);
@@ -449,7 +462,6 @@ prevBtn.addEventListener('click', goPrev);
 finishBtn.addEventListener('click', finishQuiz);
 restartBtn.addEventListener('click', () => location.reload());
 
-/* ---------- initialize webcam preview ---------- */
 (async function tryPreview() {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
